@@ -74,6 +74,53 @@ struct TupleHash {
     }
 };
 
+
+// Add these functions outside the Tile struct, as they are global utilities
+float lerp(float a, float b, float t) {
+    return a + t * (b - a);
+}
+
+float fade(float t) {
+    return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+glm::vec2 randomGradient(int ix, int iy) {
+    unsigned int seed = NOISE_SEED + 3251 * ix + 8741 * iy;
+    seed = (seed << 13) ^ seed;
+    unsigned int hashed = (seed * (seed * seed * 15731 + 789221) + 1376312589) & 0x7fffffff;
+
+    float angle = hashed % 360 * (M_PI / 180.0f);
+    return glm::vec2(cos(angle), sin(angle));
+}
+
+float dotGridGradient(int ix, int iy, float x, float y) {
+    glm::vec2 gradient = randomGradient(ix, iy);
+    glm::vec2 distance = glm::vec2(x - (float)ix, y - (float)iy);
+    return glm::dot(gradient, distance);
+}
+
+float perlin(float x, float y) {
+    int x0 = (int)floor(x);
+    int x1 = x0 + 1;
+    int y0 = (int)floor(y);
+    int y1 = y0 + 1;
+
+    float sx = fade(x - (float)x0);
+    float sy = fade(y - (float)y0);
+
+    float n0, n1, ix0, ix1;
+    n0 = dotGridGradient(x0, y0, x, y);
+    n1 = dotGridGradient(x1, y0, x, y);
+    ix0 = lerp(n0, n1, sx);
+
+    n0 = dotGridGradient(x0, y1, x, y);
+    n1 = dotGridGradient(x1, y1, x, y);
+    ix1 = lerp(n0, n1, sx);
+
+    return lerp(ix0, ix1, sy);
+}
+
+
 struct Tile {
 
     float tileVertices[18] = {
