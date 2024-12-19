@@ -4,8 +4,15 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+
 #include <vector>
 #include <iostream>
+#include <string>
+#include <sstream>
+
+#define STB_PERLIN_IMPLEMENTATION
+#include "stb_perlin.h"
+#define BUFFER_OFFSET(i) ((char *)NULL + (i))
 
 static GLFWwindow *window;
 static int windowWidth = 1024;
@@ -95,6 +102,14 @@ struct Tile {
     }
 
     void initialize() {
+
+	// Apply Perlin noise to modify Y-coordinates of the tile vertices
+        for (int i = 0; i < 6; ++i) {
+            float x = tileVertices[i * 3];     // X-coordinate
+            float z = tileVertices[i * 3 + 2]; // Z-coordinate
+            tileVertices[i * 3 + 1] = stb_perlin_noise3(x * 5.0f, z * 5.0f, 0.0f, 0, 0, 0) * 0.2f; // Adjust height using Perlin noise
+        }
+	    
         glGenVertexArrays(1, &vertexArrayID);
         glBindVertexArray(vertexArrayID);
 
