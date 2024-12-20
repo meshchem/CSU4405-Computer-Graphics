@@ -7,22 +7,22 @@
 #include <vector>
 #include <iostream>
 #include <string>
-#include <sstream>
 #include <tuple>
 #include <unordered_set>
-
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
 
+void handleCameraMovement(GLFWwindow* window);
+void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
+
+
+
+
 static GLFWwindow *window;
 static int windowWidth = 1024;
 static int windowHeight = 768;
-
-//setting up user controls
-static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mode);
-static void mouse_callback(GLFWwindow *window, double xpos, double ypos);
-void handleCameraMovement(GLFWwindow* window);
 
 // Camera variables
 static glm::vec3 cameraPos(0.0f, 1.0f, 3.0f);
@@ -30,56 +30,42 @@ static glm::vec3 cameraFront(0.0f, 0.0f, -1.0f);
 static glm::vec3 cameraUp(0.0f, 1.0f, 0.0f);
 static float yaw = -90.0f;
 static float pitch = 0.0f;
-static float lastX = 1024.0f / 2.0;
-static float lastY = 768.0f / 2.0;
+static float lastX = windowWidth / 2.0f;
+static float lastY = windowHeight / 2.0f;
 static bool firstMouse = true;
-static float cameraSpeed = 0.05f; // Adjust as needed
+static float cameraSpeed = 0.05f;
 
 static const float cellSize = 10.0f;
-static const int renderDistance = 5; // Distance in grid cells
+static const int renderDistance = 5;
 
 const char* vertexShaderSource = R"(
+#version 330 core
 
-    #version 330 core
+layout(location = 0) in vec3 aPos;       // Vertex position
+layout(location = 1) in vec2 aTexCoord; // Texture coordinates
 
-    layout(location = 0) in vec3 aPos;       // Vertex position
-    layout(location = 1) in vec2 aTexCoord; // Texture coordinates
+uniform mat4 MVP;
 
-    uniform mat4 MVP;
+out vec2 TexCoord; // Pass texture coordinates to fragment shader
 
-    out vec2 TexCoord; // Pass texture coordinates to fragment shader
+void main() {
+    gl_Position = MVP * vec4(aPos, 1.0);
+    TexCoord = aTexCoord;
+}
+)";
 
-    void main() {
-        // Transform the vertex position by model, view, and projection matrices
-        gl_Position = projection * view * model * vec4(aPos, 1.0);
+const char* fragmentShaderSource = R"(
+#version 330 core
 
-        // Pass the texture coordinates to the fragment shader
-        TexCoord = aTexCoord;
-    }
-    )";
+in vec2 TexCoord;
+out vec4 FragColor;
 
-    const char* fragmentShaderSource = R"(
-    #version 330 core
-    in vec2 TexCoord;
-    out vec4 FragColor;
+uniform sampler2D texture1;
 
-    uniform sampler2D texture1;
-
-    void main() {
-        FragColor = texture(texture1, TexCoord);
-    }
-    )";
-
-// Custom hash function for std::tuple<int, int>
-struct TupleHash {
-    template <typename T1, typename T2>
-    std::size_t operator()(const std::tuple<T1, T2>& t) const {
-        auto h1 = std::hash<T1>{}(std::get<0>(t));
-        auto h2 = std::hash<T2>{}(std::get<1>(t));
-        return h1 ^ (h2 << 1);
-    }
-};
-
+void main() {
+    FragColor = texture(texture1, TexCoord);
+}
+)";
 
 GLuint LoadTexture(const char* path) {
     GLuint textureID;
@@ -96,8 +82,9 @@ GLuint LoadTexture(const char* path) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    } else {
-        std::cerr << "Failed to load texture: " << path << std::endl;
+    }
+    else {
+        std::cerr << "Failed to load texture" << std::endl;
     }
     stbi_image_free(data);
 
@@ -106,7 +93,6 @@ GLuint LoadTexture(const char* path) {
 
 struct Tile {
     float tileVertices[20] = {
-        // positions          // texture coords
         -0.5f, 0.0f, -0.5f,  0.0f, 0.0f,
          0.5f, 0.0f, -0.5f,  1.0f, 0.0f,
          0.5f, 0.0f,  0.5f,  1.0f, 1.0f,
@@ -120,17 +106,15 @@ struct Tile {
 
     GLuint vertexArrayID;
     GLuint vertexBufferID;
-    GLuint uvBufferID;
     GLuint indexBufferID;
     GLuint textureID;
     GLuint programID;
     GLuint mvpMatrixID;
 
-    glm::vec3 position; // Tile position
-    float scale;        // Tile size scaling factor
+    glm::vec3 position;
+    float scale;
 
-    Tile(glm::vec3 pos, float size)
-        : position(pos), scale(size) {}
+    Tile(glm::vec3 pos, float size) : position(pos), scale(size) {}
 
     GLuint compileShader(GLenum type, const char* source) {
         GLuint shader = glCreateShader(type);
@@ -149,24 +133,19 @@ struct Tile {
     }
 
     void initialize(const std::string& textureFilePath, const char* vertexShaderSource, const char* fragmentShaderSource) {
-        // Generate and bind VAO
         glGenVertexArrays(1, &vertexArrayID);
         glBindVertexArray(vertexArrayID);
 
-        // Vertex buffer
         glGenBuffers(1, &vertexBufferID);
         glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
         glBufferData(GL_ARRAY_BUFFER, sizeof(tileVertices), tileVertices, GL_STATIC_DRAW);
 
-        // Index buffer
         glGenBuffers(1, &indexBufferID);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(tileIndices), tileIndices, GL_STATIC_DRAW);
 
-        // Texture
         textureID = LoadTexture(textureFilePath.c_str());
 
-        // Compile shaders and create program
         GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderSource);
         GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
 
@@ -186,28 +165,23 @@ struct Tile {
 
         glBindVertexArray(vertexArrayID);
 
-        // Set vertex positions and texture coordinates
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
 
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
 
-        // Bind texture
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, textureID);
         glUniform1i(glGetUniformLocation(programID, "texture1"), 0);
 
-        // Compute MVP matrix
         glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
         model = glm::scale(model, glm::vec3(scale));
         glm::mat4 mvp = viewProjection * model;
         glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
 
-        // Draw tile
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-        // Cleanup
         glBindVertexArray(0);
     }
 
@@ -219,7 +193,6 @@ struct Tile {
         glDeleteProgram(programID);
     }
 };
-
 
 std::vector<Tile> tiles;
 
@@ -243,13 +216,10 @@ void generateTiles(glm::vec3 position, const char* vertexShaderSource, const cha
 
 
 int main() {
-
-    // Initialise GLFW
-	if (!glfwInit())
-	{
-		std::cerr << "Failed to initialize GLFW." << std::endl;
-		return -1;
-	}
+    if (!glfwInit()) {
+        std::cerr << "Failed to initialize GLFW." << std::endl;
+        return -1;
+    }
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -268,7 +238,6 @@ int main() {
     glfwSetKeyCallback(window, key_callback);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-    // Initialize GLAD
     if (!gladLoadGL(glfwGetProcAddress)) {
         std::cerr << "Failed to initialize GLAD" << std::endl;
         return -1;
@@ -277,7 +246,6 @@ int main() {
     glClearColor(0.53f, 0.81f, 0.92f, 1.0f);
     glEnable(GL_DEPTH_TEST);
 
-    //generateTileGrid(cameraPos);
     generateTiles(cameraPos, vertexShaderSource, fragmentShaderSource);
 
     while (!glfwWindowShouldClose(window)) {
@@ -290,7 +258,7 @@ int main() {
         }
 
         glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-        glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1024.0f / 768.0f, 0.1f, 100.0f);
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)windowWidth / windowHeight, 0.1f, 100.0f);
         glm::mat4 vp = projection * view;
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -301,9 +269,8 @@ int main() {
 
         glfwSwapBuffers(window);
         glfwPollEvents();
-    }   
+    }
 
-    // Cleanup resources
     for (auto& tile : tiles) {
         tile.cleanup();
     }
@@ -321,7 +288,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     }
 
     float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos; // Reversed since y-coordinates range from bottom to top
+    float yoffset = lastY - ypos;
     lastX = xpos;
     lastY = ypos;
 
@@ -360,8 +327,7 @@ void handleCameraMovement(GLFWwindow* window) {
         cameraPos += glm::normalize(direction) * cameraSpeed;
 }
 
-
-void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-		glfwSetWindowShouldClose(window, GL_TRUE);
+        glfwSetWindowShouldClose(window, GL_TRUE);
 }
