@@ -4,18 +4,15 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <render/shader.h>
-// #include "Building.h"
-
-
 #include <vector>
 #include <iostream>
 #include <string>
 #include <tuple>
 #include <unordered_set>
-
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
 
+// user interaction
 void handleCameraMovement(GLFWwindow* window);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
@@ -38,31 +35,9 @@ static float cameraSpeed = 0.05f;
 static const float cellSize = 10.0f;
 static const int renderDistance = 5;
 
-GLuint LoadTexture(const char* path) {
-    GLuint textureID;
-    glGenTextures(1, &textureID);
 
-    int width, height, nrChannels;
-    unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0);
-    if (data) {
-        GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    }
-    else {
-        std::cerr << "Failed to load texture" << std::endl;
-    }
-    stbi_image_free(data);
-
-    return textureID;
-}
-
-static GLuint LoadTextureTileBox(const char *texture_file_path) {
+//loading texture function
+static GLuint LoadTexture(const char *texture_file_path) {
     int w, h, channels;
     uint8_t* img = stbi_load(texture_file_path, &w, &h, &channels, 3);
     GLuint texture;
@@ -361,7 +336,7 @@ struct Building {
         }
 
         mvpMatrixUniformID = glGetUniformLocation(buildingProgramID, "MVP");
-        textureObjID = LoadTextureTileBox(textureFilePath.c_str());
+        textureObjID = LoadTexture(textureFilePath.c_str());
         textureSamplerUniformID = glGetUniformLocation(buildingProgramID, "textureSampler");
     }
 
@@ -492,7 +467,6 @@ void generateBuildings(glm::vec3 position) {
 }
 
 
-
 int main() {
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW." << std::endl;
@@ -546,6 +520,21 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
 
+        // Pass light and view uniforms
+        glm::vec3 lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f)); // Directional light
+        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 1.0f); // White light
+
+        // Render Tiles
+        glUseProgram(tileProgramID);
+
+        GLuint lightDirLocMap = glGetUniformLocation(tileProgramID, "lightDir");
+        GLuint lightColorLocMap = glGetUniformLocation(tileProgramID, "lightColor");
+        GLuint viewPosLocMap = glGetUniformLocation(tileProgramID, "viewPos");
+
+        glUniform3fv(lightDirLocMap, 1, glm::value_ptr(lightDir));
+        glUniform3fv(lightColorLocMap, 1, glm::value_ptr(lightColor));
+        glUniform3fv(viewPosLocMap, 1, glm::value_ptr(cameraPos));
+
         // Render Tiles
         glUseProgram(tileProgramID);
         for (auto& tile : tiles) {
@@ -560,6 +549,16 @@ int main() {
 
         // Render Buildings
         glUseProgram(buildingProgramID);
+
+        GLuint lightDirLoc = glGetUniformLocation(buildingProgramID, "lightDir");
+        GLuint lightColorLoc = glGetUniformLocation(buildingProgramID, "lightColor");
+        GLuint viewPosLoc = glGetUniformLocation(buildingProgramID, "viewPos");
+
+        glUniform3fv(lightDirLoc, 1, glm::value_ptr(lightDir));
+        glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
+        glUniform3fv(viewPosLoc, 1, glm::value_ptr(cameraPos));
+
+
         for (auto& building : buildings) {
             glBindVertexArray(building.vaoID);
             glBindBuffer(GL_ARRAY_BUFFER, building.vboVerticesID);
@@ -638,3 +637,5 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GL_TRUE);
 }
+
+
