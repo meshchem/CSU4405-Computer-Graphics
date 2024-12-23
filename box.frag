@@ -1,49 +1,41 @@
 #version 330 core
 
-// Inputs from the vertex shader
-in vec2 uv;             // Texture coordinates
-in vec3 fragPos;        // Fragment position in world space
-in vec3 normal;         // Normal vector in world space
+in vec3 FragPos;        // Fragment position in world space
+in vec3 Normal;         // Normal in world space
+in vec3 VertexColor;    // Color from vertex shader
+in vec2 TexCoord;       // Texture coordinate
 
-// Output color
-out vec4 finalColor;
+out vec4 FragColor;     // Final output color
 
 // Uniforms
+uniform vec3 lightPosition;   // Position of the light source
+uniform vec3 lightIntensity;  // Intensity of the light
 uniform sampler2D textureSampler; // Texture sampler
-uniform vec3 lightDir;            // Directional light direction (normalized)
-uniform vec3 lightColor;          // Light color
-uniform vec3 viewPos;             // Camera position in world space
 
-void main()
-{
-    // Normalize the normal vector
-    vec3 norm = normalize(normal);
+// Attenuation parameters
+uniform float constant;       // Constant attenuation factor
+uniform float linear;         // Linear attenuation factor
+uniform float quadratic;      // Quadratic attenuation factor
 
-    // Ambient lighting
-    float ambientStrength = 0.5;
-    vec3 ambient = ambientStrength * lightColor;
+void main() {
+    // Normalize the input normal and calculate light direction
+    vec3 norm = normalize(Normal);
+    vec3 lightDir = normalize(lightPosition - FragPos);
 
-    // Diffuse lighting (Lambertian reflectance)
-    float diff = max(dot(norm, -lightDir), 0.0);
-    vec3 diffuse = diff * lightColor;
+    // Calculate distance to the light sour
+    float distance = length(lightPosition - FragPos);
 
-    // Specular lighting (Blinn-Phong)
-    float specularStrength = 0.5;
-    vec3 viewDir = normalize(viewPos - fragPos);
-    vec3 halfwayDir = normalize(viewDir - lightDir);
-    float spec = pow(max(dot(norm, halfwayDir), 0.0), 32);
-    vec3 specular = specularStrength * spec * lightColor;
+    // Attenuation factor
+    float attenuation = 1.0 / (constant + linear * distance + quadratic * (distance * distance));
 
-    // Combine lighting components
-    vec3 lighting = ambient + diffuse + specular;
+    // Diffuse lighting
+    float diff = max(dot(norm, lightDir), 0.0); // Angle-based lighting
+    vec3 diffuse = diff * lightIntensity * attenuation;
 
-    // Sample the texture
-    vec3 textureColor = texture(textureSampler, uv).rgb;
+    // Combine lighting with texture
+    vec3 textureColor = texture(textureSampler, TexCoord).rgb;
+    vec3 finalColor = diffuse * textureColor;
 
-    // Combine texture color with lighting
-    vec3 result = lighting * textureColor;
-
-    // Output the final color
-    finalColor = vec4(result, 1.0);
+    // Output final color
+    FragColor = vec4(finalColor, 1.0);
 }
-
