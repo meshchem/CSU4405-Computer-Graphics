@@ -11,8 +11,12 @@
 #include <unordered_set>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb/stb_image_write.h>
+#define _USE_MATH_DEFINES
+#include <math.h>
 
-// user interaction
+//user control functions
 void handleCameraMovement(GLFWwindow* window);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
@@ -30,13 +34,25 @@ static float pitch = 0.0f;
 static float lastX = windowWidth / 2.0f;
 static float lastY = windowHeight / 2.0f;
 static bool firstMouse = true;
-static float cameraSpeed = 0.05f;
+static float cameraSpeed = 0.1f;
+
+// Lighting control
+const glm::vec3 wave500(0.0f, 255.0f, 146.0f);
+const glm::vec3 wave600(255.0f, 190.0f, 0.0f);
+const glm::vec3 wave700(205.0f, 0.0f, 0.0f);
+static glm::vec3 lightIntensity = 5.0f * (8.0f * wave500 + 15.6f * wave600 + 18.4f * wave700);
+//static glm::vec3 lightPosition(-275.0f, 500.0f, -275.0f);
+static glm::vec3 lightPosition = glm::normalize(glm::vec3(-0.5f, -1.0f, -0.3f));
+
+
+// OpenGL perspective parameters
+static float FoV = 0.1f;
+static float zNear = 600.0f;
+static float zFar = 1500.0f;
 
 static const float cellSize = 10.0f;
 static const int renderDistance = 5;
 
-
-//loading texture function
 static GLuint LoadTexture(const char *texture_file_path) {
     int w, h, channels;
     uint8_t* img = stbi_load(texture_file_path, &w, &h, &channels, 3);
@@ -280,6 +296,44 @@ struct Building {
 		0.0f, 0.0f,
  	};
     
+    GLfloat normalData[72] = {
+        // Front face
+        0.0f, 0.0f, 1.0f, 
+        0.0f, 0.0f, 1.0f, 
+        0.0f, 0.0f, 1.0f, 
+        0.0f, 0.0f, 1.0f,
+
+        // Back face
+        0.0f, 0.0f, -1.0f, 
+        0.0f, 0.0f, -1.0f, 
+        0.0f, 0.0f, -1.0f, 
+        0.0f, 0.0f, -1.0f,
+
+        // Left face
+        -1.0f, 0.0f, 0.0f, 
+        -1.0f, 0.0f, 0.0f, 
+        -1.0f, 0.0f, 0.0f, 
+        -1.0f, 0.0f, 0.0f,
+
+        // Right face
+        1.0f, 0.0f, 0.0f, 
+        1.0f, 0.0f, 0.0f, 
+        1.0f, 0.0f, 0.0f, 
+        1.0f, 0.0f, 0.0f,
+
+        // Top face
+        0.0f, 1.0f, 0.0f, 
+        0.0f, 1.0f, 0.0f, 
+        0.0f, 1.0f, 0.0f, 
+        0.0f, 1.0f, 0.0f,
+
+        // Bottom face
+        0.0f, -1.0f, 0.0f, 
+        0.0f, -1.0f, 0.0f, 
+        0.0f, -1.0f, 0.0f, 
+        0.0f, -1.0f, 0.0f,
+    };
+
     // OpenGL buffers
     GLuint vaoID; // Vertex Array Object
     GLuint vboVerticesID; // Vertex Buffer Object for vertices
@@ -287,11 +341,15 @@ struct Building {
     GLuint vboUVsID; // Vertex Buffer Object for UV coordinates
     GLuint eboIndicesID; // Element Buffer Object for indices
     GLuint textureObjID; // Texture Object ID
+    GLuint NormalBufferID; // vertex buffer object for normals
 
     // Shader variable IDs
     GLuint mvpMatrixUniformID; // Uniform ID for MVP matrix
     GLuint textureSamplerUniformID; // Uniform ID for texture sampler
-    //GLuint buildingProgramID; // Shader program ID
+    //GLuint lightPositionID;
+    GLuint lightPositionID;
+    GLuint lightIntensityID;
+    
 
     // Constructor
     Building(glm::vec3 position, glm::vec3 scale)
@@ -324,6 +382,11 @@ struct Building {
         glBindBuffer(GL_ARRAY_BUFFER, vboUVsID);
         glBufferData(GL_ARRAY_BUFFER, sizeof(uvData), uvData, GL_STATIC_DRAW);
 
+        // Setup normal buffer
+        glGenBuffers(1, &NormalBufferID);
+        glBindBuffer(GL_ARRAY_BUFFER, NormalBufferID);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(normalData), normalData, GL_STATIC_DRAW);
+
         // Element buffer for triangle indices
         glGenBuffers(1, &eboIndicesID);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, eboIndicesID);
@@ -335,13 +398,37 @@ struct Building {
             std::cerr << "Failed to load shaders." << std::endl;
         }
 
+        //uniforms
         mvpMatrixUniformID = glGetUniformLocation(buildingProgramID, "MVP");
         textureObjID = LoadTexture(textureFilePath.c_str());
         textureSamplerUniformID = glGetUniformLocation(buildingProgramID, "textureSampler");
+        lightPositionID = glGetUniformLocation(buildingProgramID, "lightPosition");
+        lightIntensityID = glGetUniformLocation(buildingProgramID, "lightIntensity");
+        
     }
 
-    void render(glm::mat4 cameraMatrix) {
+    void render(glm::mat4 cameraMatrix, glm::vec3 cameraPosition, glm::vec3 lightPosition, glm::vec3 lightIntensity ) {
         glUseProgram(buildingProgramID);
+
+        // Set the MVP matrix
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        modelMatrix = glm::translate(modelMatrix, position);
+        modelMatrix = glm::scale(modelMatrix, scale);
+
+        glm::mat4 mvp = glm::mat4(1.0f);
+        mvp = cameraMatrix * modelMatrix;
+        
+        glUniformMatrix4fv(mvpMatrixUniformID, 1, GL_FALSE, &mvp[0][0]);
+
+        // Pass lighting uniforms
+        glUniform3fv(lightPositionID, 1, &lightPosition[0]);
+        glUniform3fv(lightIntensityID, 1, &lightIntensity[0]);
+        glUniform3fv(glGetUniformLocation(buildingProgramID, "viewPosition"), 1, &cameraPosition[0]);
+
+        glUniform1f(glGetUniformLocation(buildingProgramID, "constant"), 1.0f);  // Base light level
+        glUniform1f(glGetUniformLocation(buildingProgramID, "linear"), 0.09f);  // Linear decay
+        glUniform1f(glGetUniformLocation(buildingProgramID, "quadratic"), 0.032f); // Quadratic decay
+
 
         glEnableVertexAttribArray(0);
         glBindBuffer(GL_ARRAY_BUFFER, vboVerticesID);
@@ -352,19 +439,7 @@ struct Building {
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, eboIndicesID);
-
-        // Model transformation
-        glm::mat4 modelMatrix = glm::mat4(1.0f);
-
-        // Scale and position adjustments
-        modelMatrix = glm::translate(modelMatrix, position);
-        modelMatrix = glm::scale(modelMatrix, scale);
-        //modelMatrix = glm::translate(modelMatrix, glm::vec3(position.x, 0.0f, position.z));
-
-        // Set the MVP matrix
-        glm::mat4 mvp = cameraMatrix * modelMatrix;
-        glUniformMatrix4fv(mvpMatrixUniformID, 1, GL_FALSE, &mvp[0][0]);
-
+;
         // Enable UV buffer and texture sampler
         glEnableVertexAttribArray(2);
         glBindBuffer(GL_ARRAY_BUFFER, vboUVsID);
@@ -375,23 +450,26 @@ struct Building {
         glBindTexture(GL_TEXTURE_2D, textureObjID);
         glUniform1i(textureSamplerUniformID, 0);
 
+        // Enable Normal Buffer 
+        glEnableVertexAttribArray(3);
+        glBindBuffer(GL_ARRAY_BUFFER, NormalBufferID);
+        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
         // Draw the building
-        glDrawElements(
-            GL_TRIANGLES,
-            36,
-            GL_UNSIGNED_INT,
-            (void*)0
-        );
+        glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, (void*)0);
 
         glDisableVertexAttribArray(0);
         glDisableVertexAttribArray(1);
         glDisableVertexAttribArray(2);
+        glDisableVertexAttribArray(3);
+        
     }
 
     void cleanup() {
         glDeleteBuffers(1, &vboVerticesID);
         glDeleteBuffers(1, &vboColorsID);
         glDeleteBuffers(1, &eboIndicesID);
+        glDeleteBuffers(1, &NormalBufferID);
         glDeleteVertexArrays(1, &vaoID);
         glDeleteBuffers(1, &vboUVsID);
         glDeleteTextures(1, &textureObjID);
@@ -454,9 +532,6 @@ void generateBuildings(glm::vec3 position) {
                 glm::vec3 adjustedBuildingPosition = buildingPosition + glm::vec3(0.0f, buildingHeight / 2.0f, 0.0f);
 
                 // Create and initialize the building
-                /*Building newBuilding(adjustedBuildingPosition, buildingScale);
-                newBuilding.initialize(buildingPosition, buildingScale, "../FinalProject/facade3.jpg");
-                buildings.push_back(newBuilding);*/
                 Building newBuilding(adjustedBuildingPosition, buildingScale);
                 newBuilding.initialize(buildingPosition, buildingScale, getRandomFacade());
                 buildings.push_back(newBuilding);
@@ -465,6 +540,7 @@ void generateBuildings(glm::vec3 position) {
         }
     }
 }
+
 
 
 int main() {
@@ -498,8 +574,6 @@ int main() {
     glClearColor(0.05f, 0.05f, 0.2f, 1.0f);
     glEnable(GL_DEPTH_TEST);
 
-   // generateTiles(cameraPos);
-   // generateBuildings(cameraPos);
     srand(static_cast<unsigned int>(time(nullptr)));
     initializeBuildingFacades();
 
@@ -514,26 +588,11 @@ int main() {
         // Calculate view-projection matrix
         glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)windowWidth / windowHeight, 0.1f, 100.0f);
-        glm::mat4 viewProjectionMatrix = projection * view;
+        glm::mat4 vp = projection * view;
 
         // Clear the screen and enable depth testing
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
-
-        // Pass light and view uniforms
-        glm::vec3 lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f)); // Directional light
-        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 1.0f); // White light
-
-        // Render Tiles
-        glUseProgram(tileProgramID);
-
-        GLuint lightDirLocMap = glGetUniformLocation(tileProgramID, "lightDir");
-        GLuint lightColorLocMap = glGetUniformLocation(tileProgramID, "lightColor");
-        GLuint viewPosLocMap = glGetUniformLocation(tileProgramID, "viewPos");
-
-        glUniform3fv(lightDirLocMap, 1, glm::value_ptr(lightDir));
-        glUniform3fv(lightColorLocMap, 1, glm::value_ptr(lightColor));
-        glUniform3fv(viewPosLocMap, 1, glm::value_ptr(cameraPos));
 
         // Render Tiles
         glUseProgram(tileProgramID);
@@ -543,29 +602,26 @@ int main() {
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tile.indexBufferID);
 
             // Render the tile
-            tile.render(viewProjectionMatrix);
+            tile.render(vp);
         }
         glUseProgram(0); // Unbind the tile shader program
 
         // Render Buildings
         glUseProgram(buildingProgramID);
-
-        GLuint lightDirLoc = glGetUniformLocation(buildingProgramID, "lightDir");
-        GLuint lightColorLoc = glGetUniformLocation(buildingProgramID, "lightColor");
-        GLuint viewPosLoc = glGetUniformLocation(buildingProgramID, "viewPos");
-
-        glUniform3fv(lightDirLoc, 1, glm::value_ptr(lightDir));
-        glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
-        glUniform3fv(viewPosLoc, 1, glm::value_ptr(cameraPos));
-
+        glUniform3fv(glGetUniformLocation(buildingProgramID, "lightPosition"), 1, &lightPosition[0]);
 
         for (auto& building : buildings) {
             glBindVertexArray(building.vaoID);
             glBindBuffer(GL_ARRAY_BUFFER, building.vboVerticesID);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, building.eboIndicesID);
 
+            // Pass lighting uniforms
+            glUniform3fv(building.lightPositionID, 1, &lightPosition[0]);
+            glUniform3fv(building.lightIntensityID, 1, &lightIntensity[0]);
+            glUniform3fv(glGetUniformLocation(buildingProgramID, "viewPosition"), 1, &cameraPos[0]);
+
             // Render the building
-            building.render(viewProjectionMatrix);
+            building.render(vp, cameraPos, lightPosition, lightIntensity);
         }
         glUseProgram(0); // Unbind the building shader program
 
@@ -637,5 +693,3 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GL_TRUE);
 }
-
-
