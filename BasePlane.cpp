@@ -149,7 +149,7 @@ struct Tile {
         glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
 
         glm::vec3 lightPosition = glm::vec3(50.0f, 80.0f, 50.0f);
-        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 0.8f); // light yellow light
+        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 0.8f); 
         glUniform3fv(lightPosID, 1, &lightPosition[0]);
         glUniform3fv(lightColorID, 1, &lightColor[0]);
 
@@ -372,7 +372,7 @@ struct Building {
 
     // Initialization function
     void initialize(const glm::vec3& position, const glm::vec3& scale, const std::string& textureFilePath) {
-        this->position = position;
+        this->position = glm::vec3(position.x, scale.y / 2.0f, position.z);
         this->scale = glm::vec3(scale.x * 0.5f, scale.y, scale.z * 0.5f);
 
         // Setup OpenGL buffers
@@ -408,7 +408,7 @@ struct Building {
         glUniformMatrix4fv(mvpUniformID, 1, GL_FALSE, &mvp[0][0]);
 
         glm::vec3 lightPosition = glm::vec3(50.0f, 80.0f, 50.0f);
-        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 0.8f); // sunset light
+        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 0.8f); 
         glUniform3fv(lightPosID, 1, &lightPosition[0]);
         glUniform3fv(lightColorID, 1, &lightColor[0]);
 
@@ -552,8 +552,8 @@ int main() {
     glClearColor(0.05f, 0.05f, 0.2f, 1.0f);
     glEnable(GL_DEPTH_TEST);
 
-   // generateTiles(cameraPos);
-   // generateBuildings(cameraPos);
+    generateTiles(cameraPos);
+    generateBuildings(cameraPos);
     srand(static_cast<unsigned int>(time(nullptr)));
     initializeBuildingFacades();
 
