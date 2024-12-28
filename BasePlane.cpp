@@ -11,7 +11,13 @@
 #include <unordered_set>
 
 #define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb/stb_image.h>
+
+#define _USE_MATH_DEFINES
+#include <math.h>
+#include <iomanip>
+#include <sstream> // For std::stringstream
 
 void handleCameraMovement(GLFWwindow* window);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
@@ -22,7 +28,7 @@ static int windowWidth = 1024;
 static int windowHeight = 768;
 
 // Camera variables
-static glm::vec3 cameraPos(0.0f, 15.0f, 3.0f);
+static glm::vec3 cameraPos(0.0f, 5.0f, 4.0f);
 static glm::vec3 cameraFront(0.0f, -1.0f, 0.0f);
 static glm::vec3 cameraUp(0.0f, 1.0f, 0.0f);
 static float yaw = -90.0f;
@@ -328,7 +334,6 @@ struct Skybox {
 	}
 };
 
-
 struct Tile {
     float tileVertices[20] = {
         -0.5f, 0.0f, -0.5f,  0.0f, 0.0f,
@@ -449,6 +454,13 @@ struct Tile {
 struct Building {
 	glm::vec3 position;		// Position of the box 
 	glm::vec3 scale;		// Size of the box in each axis
+
+    // Check if a point is inside the building's AABB
+    bool isPointInside(const glm::vec3& point, float margin = 0.5f) const {
+        return (point.x >= position.x - scale.x - margin && point.x <= position.x + scale.x + margin) &&
+            (point.y >= position.y - scale.y - margin && point.y <= position.y + scale.y + margin) &&
+            (point.z >= position.z - scale.z - margin && point.z <= position.z + scale.z + margin);
+    }   
 	
 	GLfloat vertexData[72] = {	// Vertex definition for a canonical box
 		// Front face
@@ -594,6 +606,8 @@ struct Building {
     Building(glm::vec3 position, glm::vec3 scale)
         : position(position), scale(scale) {}
 
+        
+
     // Buffer setup function
     void setupBuffers() {
         // Generate and bind VAO
@@ -635,6 +649,7 @@ struct Building {
     void initialize(const glm::vec3& position, const glm::vec3& scale, const std::string& textureFilePath) {
         this->position = position;
         this->scale = glm::vec3(scale.x * 0.5f, scale.y, scale.z * 0.5f);
+        //this->scale = scale * 0.5f;
 
         // Setup OpenGL buffers
         setupBuffers();
@@ -756,7 +771,7 @@ std::string getRandomFacade() {
     int randomIndex = rand() % BuildingFacades.size();
     return BuildingFacades[randomIndex];
 }
-/*
+
 void generateBuildings(glm::vec3 position) {
     int centerX = static_cast<int>(std::floor(position.x / cellSize));
     int centerZ = static_cast<int>(std::floor(position.z / cellSize));
@@ -782,8 +797,9 @@ void generateBuildings(glm::vec3 position) {
         }
     }
 }
-*/
 
+
+/*
 void generateBuildings(glm::vec3 position) {
     int centerX = static_cast<int>(std::floor(position.x / cellSize));
     int centerZ = static_cast<int>(std::floor(position.z / cellSize));
@@ -827,7 +843,8 @@ void generateBuildings(glm::vec3 position) {
             }
         }
     }
-}
+}*/
+
 
 int main() {
     if (!glfwInit()) {
@@ -862,14 +879,23 @@ int main() {
 
     skybox.initialize(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(500.0f, 500.0f, 500.0f)); // Adjust scale if needed
 
-   // generateTiles(cameraPos);
-   // generateBuildings(cameraPos);
     srand(static_cast<unsigned int>(time(nullptr)));
     initializeBuildingFacades();
 
+    // Time and frame rate tracking
+	static double lastTime = glfwGetTime();
+	float time = 0.0f;			// Animation time 
+	float fTime = 0.0f;			// Time for measuring fps
+	unsigned long frames = 0;
+
     while (!glfwWindowShouldClose(window)) {
-    // Handle camera movement
+        // Handle camera movement
         handleCameraMovement(window);
+
+        // Update states for animation
+        double currentTime = glfwGetTime();
+        float deltaTime = float(currentTime - lastTime);
+		lastTime = currentTime;
 
         // Clear the screen (only once per frame)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -894,6 +920,7 @@ int main() {
         glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)windowWidth / windowHeight, 0.1f, 100.0f);
         glm::mat4 vp = projection * view;
+
         // Render Tiles
         glUseProgram(tileProgramID);
         for (auto& tile : tiles) {
@@ -917,6 +944,20 @@ int main() {
             building.render(vp);
         }
         glUseProgram(0); // Unbind the building shader program
+
+        // FPS tracking 
+		// Count number of frames over a few seconds and take average
+		frames++;
+		fTime += deltaTime;
+		if (fTime > 2.0f) {		
+			float fps = frames / fTime;
+			frames = 0;
+			fTime = 0;
+			
+			std::stringstream stream;
+			stream << std::fixed << std::setprecision(2) << "Futuristic Emerald Isle | Frames per second (FPS): " << fps;
+			glfwSetWindowTitle(window, stream.str().c_str());
+		}
 
         // Swap buffers and poll events
         glfwSwapBuffers(window);
@@ -986,6 +1027,47 @@ void handleCameraMovement(GLFWwindow* window) {
     // Update Skybox position to follow the camera
     skybox.position = cameraPos;
 }
+
+
+/*
+void handleCameraMovement(GLFWwindow* window) {
+    glm::vec3 direction(0.0f);
+
+    // Handle keyboard input for movement
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        direction += cameraFront;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        direction -= cameraFront;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        direction -= glm::normalize(glm::cross(cameraFront, cameraUp));
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        direction += glm::normalize(glm::cross(cameraFront, cameraUp));
+
+    if (glm::length(direction) > 0.0f) {
+        glm::vec3 proposedPosition = cameraPos + glm::normalize(direction) * cameraSpeed;
+
+        // Preserve the camera's fixed y-coordinate
+        proposedPosition.y = cameraPos.y;
+
+        // Check for collisions with buildings
+        bool collision = false;
+        for (const auto& building : buildings) {
+            if (building.isPointInside(proposedPosition)) {
+                collision = true;
+                break;
+            }
+        }
+
+        // Update camera position only if no collision
+        if (!collision) {
+            cameraPos = proposedPosition;
+
+            // Update Skybox position to follow the camera
+            skybox.position = cameraPos;
+        }
+    }
+}
+*/
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
