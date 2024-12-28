@@ -22,7 +22,7 @@ static int windowWidth = 1024;
 static int windowHeight = 768;
 
 // Camera variables
-static glm::vec3 cameraPos(0.0f, 50.0f, 3.0f);
+static glm::vec3 cameraPos(0.0f, 15.0f, 3.0f);
 static glm::vec3 cameraFront(0.0f, -1.0f, 0.0f);
 static glm::vec3 cameraUp(0.0f, 1.0f, 0.0f);
 static float yaw = -90.0f;
@@ -268,7 +268,7 @@ struct Skybox {
 
 		// Get a handle for our "MVP" uniform
 		mvpMatrixID = glGetUniformLocation(skyboxProgramID, "MVP");
-		textureID = LoadTexture("../FinalProject/sky.png");
+		textureID = LoadTexture("../FinalProject/sky3.png");
 		textureSamplerID = glGetUniformLocation(skyboxProgramID,"textureSampler");
 	}
 
@@ -327,6 +327,7 @@ struct Skybox {
 		glDeleteProgram(skyboxProgramID);
 	}
 };
+
 
 struct Tile {
     float tileVertices[20] = {
@@ -409,7 +410,7 @@ struct Tile {
         glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
 
         glm::vec3 lightPosition = glm::vec3(50.0f, 80.0f, 50.0f);
-        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 0.8f); 
+        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 0.8f); // light yellow light
         glUniform3fv(lightPosID, 1, &lightPosition[0]);
         glUniform3fv(lightColorID, 1, &lightColor[0]);
 
@@ -632,7 +633,7 @@ struct Building {
 
     // Initialization function
     void initialize(const glm::vec3& position, const glm::vec3& scale, const std::string& textureFilePath) {
-        this->position = glm::vec3(position.x, scale.y / 2.0f, position.z);
+        this->position = position;
         this->scale = glm::vec3(scale.x * 0.5f, scale.y, scale.z * 0.5f);
 
         // Setup OpenGL buffers
@@ -668,7 +669,7 @@ struct Building {
         glUniformMatrix4fv(mvpUniformID, 1, GL_FALSE, &mvp[0][0]);
 
         glm::vec3 lightPosition = glm::vec3(50.0f, 80.0f, 50.0f);
-        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 0.8f); 
+        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 0.8f); // sunset light
         glUniform3fv(lightPosID, 1, &lightPosition[0]);
         glUniform3fv(lightColorID, 1, &lightColor[0]);
 
@@ -721,7 +722,7 @@ struct Building {
 std::vector<Tile> tiles;
 std::vector<Building> buildings;
 std::vector<std::string> BuildingFacades;
-Skybox skybox; // Skybox instance
+Skybox skybox;
 
 void generateTiles(glm::vec3 position) {
     int centerX = static_cast<int>(std::floor(position.x / cellSize));
@@ -755,7 +756,7 @@ std::string getRandomFacade() {
     int randomIndex = rand() % BuildingFacades.size();
     return BuildingFacades[randomIndex];
 }
-
+/*
 void generateBuildings(glm::vec3 position) {
     int centerX = static_cast<int>(std::floor(position.x / cellSize));
     int centerZ = static_cast<int>(std::floor(position.z / cellSize));
@@ -781,6 +782,52 @@ void generateBuildings(glm::vec3 position) {
         }
     }
 }
+*/
+
+void generateBuildings(glm::vec3 position) {
+    int centerX = static_cast<int>(std::floor(position.x / cellSize));
+    int centerZ = static_cast<int>(std::floor(position.z / cellSize));
+
+    // Define radius for circular patterns and cluster distance
+    float clusterRadius = cellSize * 2.0f; // Adjust as needed
+    int buildingsPerCluster = 8; // Number of buildings in a circular cluster
+
+    for (int x = centerX - renderDistance; x <= centerX + renderDistance; ++x) {
+        for (int z = centerZ - renderDistance; z <= centerZ + renderDistance; ++z) {
+            glm::vec3 clusterCenter = glm::vec3(x * cellSize, 0.0f, z * cellSize);
+
+            // Check if this position already has a cluster
+            if (rand() % 2 == 0 && std::none_of(buildings.begin(), buildings.end(), [&](const Building& b) {
+                return glm::distance(glm::vec2(b.position.x, b.position.z), glm::vec2(clusterCenter.x, clusterCenter.z)) < clusterRadius;
+            })) {
+                // Generate buildings in a circular cluster
+                for (int i = 0; i < buildingsPerCluster; ++i) {
+                    float angle = i * (360.0f / buildingsPerCluster); // Angle for each building
+                    float radians = glm::radians(angle);
+                    glm::vec3 offset = glm::vec3(std::cos(radians), 0.0f, std::sin(radians)) * (clusterRadius / 2.0f);
+
+                    glm::vec3 buildingPosition = clusterCenter + offset;
+
+                    // Ensure no overlapping buildings
+                    if (std::none_of(buildings.begin(), buildings.end(), [&](const Building& b) {
+                        return glm::distance(glm::vec2(b.position.x, b.position.z), glm::vec2(buildingPosition.x, buildingPosition.z)) < (cellSize / 2.0f);
+                    })) {
+                        float buildingHeight = 5.0f + static_cast<float>(rand() % 15); // Random height
+                        glm::vec3 buildingScale(5.0f, buildingHeight, 5.0f);
+
+                        // Ensure the building starts on top of the tile
+                        glm::vec3 adjustedBuildingPosition = buildingPosition + glm::vec3(0.0f, buildingHeight / 2.0f, 0.0f);
+
+                        // Create and initialize the building
+                        Building newBuilding(adjustedBuildingPosition, buildingScale);
+                        newBuilding.initialize(buildingPosition, buildingScale, getRandomFacade());
+                        buildings.push_back(newBuilding);
+                    }
+                }
+            }
+        }
+    }
+}
 
 int main() {
     if (!glfwInit()) {
@@ -793,7 +840,7 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    window = glfwCreateWindow(windowWidth, windowHeight, "Diffuse Lighting Implemented for entire scene", NULL, NULL);
+    window = glfwCreateWindow(windowWidth, windowHeight, "SkyBox Implementation", NULL, NULL);
     if (window == NULL) {
         std::cerr << "Failed to open a GLFW window." << std::endl;
         glfwTerminate();
@@ -813,10 +860,10 @@ int main() {
     glClearColor(0.05f, 0.05f, 0.2f, 1.0f);
     glEnable(GL_DEPTH_TEST);
 
-    //skybox.initialize(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(500.0f, 500.0f, 500.0f)); // Adjust scale if needed
+    skybox.initialize(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(500.0f, 500.0f, 500.0f)); // Adjust scale if needed
 
-    generateTiles(cameraPos);
-    generateBuildings(cameraPos);
+   // generateTiles(cameraPos);
+   // generateBuildings(cameraPos);
     srand(static_cast<unsigned int>(time(nullptr)));
     initializeBuildingFacades();
 
@@ -824,25 +871,29 @@ int main() {
     // Handle camera movement
         handleCameraMovement(window);
 
+        // Clear the screen (only once per frame)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // Render the Skybox
+        glDepthMask(GL_FALSE); // Disable depth writing
+        glUseProgram(skyboxProgramID);
+
+        glm::mat4 skyboxViewMatrix = glm::mat4(glm::mat3(glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp)));
+        glm::mat4 skyboxProjection = glm::perspective(glm::radians(45.0f), (float)windowWidth / windowHeight, 0.1f, 1000.0f);
+
+        skybox.render(skyboxProjection * skyboxViewMatrix);
+
+        glDepthMask(GL_TRUE); // Re-enable depth writing for other objects
+        glUseProgram(0);
+
         // Generate tiles and buildings dynamically based on the camera position
         generateTiles(cameraPos);
         generateBuildings(cameraPos);
 
-        // Calculate view-projection matrix
-       glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+        // Calculate view-projection matrix for tiles and buildings
+        glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)windowWidth / windowHeight, 0.1f, 100.0f);
         glm::mat4 vp = projection * view;
-
-        // Clear the screen and enable depth testing
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glEnable(GL_DEPTH_TEST);
-
-        // Render the Skybox
-        glm::mat4 skyboxViewMatrix = glm::mat4(glm::mat3(glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp)));
-        // Remove translation from view matrix for skybox rendering
-        glm::mat4 skyboxProjection = glm::perspective(glm::radians(45.0f), (float)windowWidth / windowHeight, 0.1f, 1000.0f);
-        skybox.render(skyboxProjection * skyboxViewMatrix);
-
         // Render Tiles
         glUseProgram(tileProgramID);
         for (auto& tile : tiles) {
@@ -871,6 +922,8 @@ int main() {
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+
+        skybox.cleanup(); 
 
         for (auto& tile : tiles) {
             tile.cleanup();
@@ -929,14 +982,12 @@ void handleCameraMovement(GLFWwindow* window) {
 
     if (glm::length(direction) > 0.0f)
         cameraPos += glm::normalize(direction) * cameraSpeed;
-    
+
     // Update Skybox position to follow the camera
-    //skybox.position = cameraPos;
+    skybox.position = cameraPos;
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GL_TRUE);
 }
-
-
