@@ -17,7 +17,7 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <iomanip>
-#include <sstream> // For std::stringstream
+#include <sstream> 
 
 void handleCameraMovement(GLFWwindow* window);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
@@ -28,7 +28,7 @@ static int windowWidth = 1024;
 static int windowHeight = 768;
 
 // Camera variables
-static glm::vec3 cameraPos(0.0f, 5.0f, 4.0f);
+static glm::vec3 cameraPos(5.0f, 5.0f, 5.0f);
 static glm::vec3 cameraFront(0.0f, -1.0f, 0.0f);
 static glm::vec3 cameraUp(0.0f, 1.0f, 0.0f);
 static float yaw = -90.0f;
@@ -38,9 +38,9 @@ static float lastY = windowHeight / 2.0f;
 static bool firstMouse = true;
 static float cameraSpeed = 0.05f;
 
+// grid parameters
 static const float cellSize = 10.0f;
 static const int renderDistance = 5;
-
 
 static GLuint LoadTexture(const char *texture_file_path) {
     int w, h, channels;
@@ -336,6 +336,7 @@ struct Skybox {
 
 struct Tile {
     float tileVertices[20] = {
+        // pos               // uv
         -0.5f, 0.0f, -0.5f,  0.0f, 0.0f,
          0.5f, 0.0f, -0.5f,  1.0f, 0.0f,
          0.5f, 0.0f,  0.5f,  1.0f, 1.0f,
@@ -373,29 +374,36 @@ struct Tile {
     Tile(glm::vec3 pos, float size) : position(pos), scale(size) {}
 
     void initialize(const std::string& textureFilePath) {
+        // Generate and bind a Vertex Array Object (VAO) to manage vertex attributes.
         glGenVertexArrays(1, &vertexArrayID);
         glBindVertexArray(vertexArrayID);
 
+        // Generate and bind a Vertex Buffer Object (VBO) for storing vertex data.
         glGenBuffers(1, &vertexBufferID);
         glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
         glBufferData(GL_ARRAY_BUFFER, sizeof(tileVertices), tileVertices, GL_STATIC_DRAW);
 
+        // Generate and bind a buffer for storing normal vectors.
         glGenBuffers(1, &normalBufferID);
         glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
         glBufferData(GL_ARRAY_BUFFER, sizeof(tileNormals), tileNormals, GL_STATIC_DRAW);
 
+        // Generate and bind an Element Buffer Object (EBO) for storing indices.
         glGenBuffers(1, &indexBufferID);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(tileIndices), tileIndices, GL_STATIC_DRAW);
 
-        tileProgramID = LoadShadersFromFile("../FinalProject/map.vert", "../FinalProject/map.frag");
+        // Load the vertex and fragment shaders for the tile program.
+        tileProgramID = LoadShadersFromFile("../FinalProject/tile.vert", "../FinalProject/tile.frag");
 		if (tileProgramID == 0)
 		{
 			std::cerr << "Failed to load shaders." << std::endl;
 		}
 
+        // Load the texture from the specified file path.
         textureID = LoadTexture(textureFilePath.c_str());
 
+        // retrieving uniform locations for shader variables from the shader program tileProgramID
         mvpMatrixID = glGetUniformLocation(tileProgramID, "MVP");
         modelMatrixID = glGetUniformLocation(tileProgramID, "model");
         lightPosID = glGetUniformLocation(tileProgramID, "lightPos");
@@ -403,17 +411,22 @@ struct Tile {
     }
 
     void render(glm::mat4 viewProjection) {
+        // shader program for rendering
         glUseProgram(tileProgramID);
 
+        // Bind the Vertex Array Object (VAO) for the tile.
         glBindVertexArray(vertexArrayID);
 
+        // Create the model matrix
         glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
         model = glm::scale(model, glm::vec3(scale));
         glUniformMatrix4fv(modelMatrixID, 1, GL_FALSE, &model[0][0]);
-        
+
+        // Compute and pass the mvp matrix to the shader
         glm::mat4 mvp = viewProjection * model;
         glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
 
+        // Set the light position and color uniforms in the shader
         glm::vec3 lightPosition = glm::vec3(50.0f, 80.0f, 50.0f);
         glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 0.8f); // light yellow light
         glUniform3fv(lightPosID, 1, &lightPosition[0]);
@@ -432,13 +445,15 @@ struct Tile {
         glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
         glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
        
+       // Binding the texture to texture unit 0 and passing it to shader.
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, textureID);
         glUniform1i(glGetUniformLocation(tileProgramID, "texture1"), 0);
 
-
+        // Render the tile using indexed drawing with triangles
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
+        // unbind vao
         glBindVertexArray(0);
     }
 
@@ -647,15 +662,14 @@ struct Building {
 
     // Initialization function
     void initialize(const glm::vec3& position, const glm::vec3& scale, const std::string& textureFilePath) {
-        this->position = position;
+        this->position = glm::vec3(position.x, scale.y / 2.0f, position.z);
         this->scale = glm::vec3(scale.x * 0.5f, scale.y, scale.z * 0.5f);
-        //this->scale = scale * 0.5f;
 
         // Setup OpenGL buffers
         setupBuffers();
 
         // Load shaders and set up uniforms
-        buildingProgramID = LoadShadersFromFile("../FinalProject/box.vert", "../FinalProject/box.frag");
+        buildingProgramID = LoadShadersFromFile("../FinalProject/building.vert", "../FinalProject/building.frag");
         if (buildingProgramID == 0) {
             std::cerr << "Failed to load shaders." << std::endl;
         }
@@ -684,7 +698,7 @@ struct Building {
         glUniformMatrix4fv(mvpUniformID, 1, GL_FALSE, &mvp[0][0]);
 
         glm::vec3 lightPosition = glm::vec3(50.0f, 80.0f, 50.0f);
-        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 0.8f); // sunset light
+        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 0.8f);
         glUniform3fv(lightPosID, 1, &lightPosition[0]);
         glUniform3fv(lightColorID, 1, &lightColor[0]);
 
@@ -742,16 +756,19 @@ Skybox skybox;
 void generateTiles(glm::vec3 position) {
     int centerX = static_cast<int>(std::floor(position.x / cellSize));
     int centerZ = static_cast<int>(std::floor(position.z / cellSize));
-
+    // Iterate over a square area around the center position based on the render distance
     for (int x = centerX - renderDistance; x <= centerX + renderDistance; ++x) {
+        // Compute the position of the current tile in world coordinates.
         for (int z = centerZ - renderDistance; z <= centerZ + renderDistance; ++z) {
             glm::vec3 tilePosition = glm::vec3(x * cellSize, 0.0f, z * cellSize);
+            // Check if the tile at this position already exists in the list of tiles
             if (std::none_of(tiles.begin(), tiles.end(), [&](const Tile& t) {
                 return t.position == tilePosition;
             })) {
-                Tile newTile(tilePosition, cellSize);
+                // does not exist, create a new tile
+                Tile newTile(tilePosition, cellSize); // Initialize the new tile with the specified texture
                 newTile.initialize("../FinalProject/tile4.jpg");
-                tiles.push_back(newTile);
+                tiles.push_back(newTile); // Add the new tile to the list of tiles.
             }
         }
     }
@@ -798,54 +815,6 @@ void generateBuildings(glm::vec3 position) {
     }
 }
 
-
-/*
-void generateBuildings(glm::vec3 position) {
-    int centerX = static_cast<int>(std::floor(position.x / cellSize));
-    int centerZ = static_cast<int>(std::floor(position.z / cellSize));
-
-    // Define radius for circular patterns and cluster distance
-    float clusterRadius = cellSize * 2.0f; // Adjust as needed
-    int buildingsPerCluster = 8; // Number of buildings in a circular cluster
-
-    for (int x = centerX - renderDistance; x <= centerX + renderDistance; ++x) {
-        for (int z = centerZ - renderDistance; z <= centerZ + renderDistance; ++z) {
-            glm::vec3 clusterCenter = glm::vec3(x * cellSize, 0.0f, z * cellSize);
-
-            // Check if this position already has a cluster
-            if (rand() % 2 == 0 && std::none_of(buildings.begin(), buildings.end(), [&](const Building& b) {
-                return glm::distance(glm::vec2(b.position.x, b.position.z), glm::vec2(clusterCenter.x, clusterCenter.z)) < clusterRadius;
-            })) {
-                // Generate buildings in a circular cluster
-                for (int i = 0; i < buildingsPerCluster; ++i) {
-                    float angle = i * (360.0f / buildingsPerCluster); // Angle for each building
-                    float radians = glm::radians(angle);
-                    glm::vec3 offset = glm::vec3(std::cos(radians), 0.0f, std::sin(radians)) * (clusterRadius / 2.0f);
-
-                    glm::vec3 buildingPosition = clusterCenter + offset;
-
-                    // Ensure no overlapping buildings
-                    if (std::none_of(buildings.begin(), buildings.end(), [&](const Building& b) {
-                        return glm::distance(glm::vec2(b.position.x, b.position.z), glm::vec2(buildingPosition.x, buildingPosition.z)) < (cellSize / 2.0f);
-                    })) {
-                        float buildingHeight = 5.0f + static_cast<float>(rand() % 15); // Random height
-                        glm::vec3 buildingScale(5.0f, buildingHeight, 5.0f);
-
-                        // Ensure the building starts on top of the tile
-                        glm::vec3 adjustedBuildingPosition = buildingPosition + glm::vec3(0.0f, buildingHeight / 2.0f, 0.0f);
-
-                        // Create and initialize the building
-                        Building newBuilding(adjustedBuildingPosition, buildingScale);
-                        newBuilding.initialize(buildingPosition, buildingScale, getRandomFacade());
-                        buildings.push_back(newBuilding);
-                    }
-                }
-            }
-        }
-    }
-}*/
-
-
 int main() {
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW." << std::endl;
@@ -877,14 +846,13 @@ int main() {
     glClearColor(0.05f, 0.05f, 0.2f, 1.0f);
     glEnable(GL_DEPTH_TEST);
 
-    skybox.initialize(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(500.0f, 500.0f, 500.0f)); // Adjust scale if needed
+    skybox.initialize(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(500.0f, 500.0f, 500.0f)); 
 
     srand(static_cast<unsigned int>(time(nullptr)));
     initializeBuildingFacades();
 
     // Time and frame rate tracking
 	static double lastTime = glfwGetTime();
-	float time = 0.0f;			// Animation time 
 	float fTime = 0.0f;			// Time for measuring fps
 	unsigned long frames = 0;
 
@@ -1009,6 +977,8 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     cameraFront = glm::normalize(front);
 }
 
+//for debugging
+/*
 void handleCameraMovement(GLFWwindow* window) {
     glm::vec3 direction(0.0f);
 
@@ -1027,9 +997,9 @@ void handleCameraMovement(GLFWwindow* window) {
     // Update Skybox position to follow the camera
     skybox.position = cameraPos;
 }
+*/
 
-
-/*
+// for user
 void handleCameraMovement(GLFWwindow* window) {
     glm::vec3 direction(0.0f);
 
@@ -1067,7 +1037,6 @@ void handleCameraMovement(GLFWwindow* window) {
         }
     }
 }
-*/
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
